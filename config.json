@@ -1,0 +1,29 @@
+{
+  "telegram": { "token": "", "chatId": "" },
+
+  "capital": 4.52,
+  "leverage": 22,
+  "minNotional": 100,
+
+  "triggerTimeframes": ["3m", "5m"],
+  "closeDelayMs": 2000,
+
+  "slopeBars": 3,
+  "spreadMinPct": 0.0005,
+  "chopLookback": 20,
+  "chopFlips": 4,
+
+  "swingLookback": 20,
+  "pullbackMin": 5,
+  "pullbackMax": 8,
+  "smallBodyAtr": 1.0,
+  "shockVolMult": 2.0,
+
+  "bodyMinRatio": 0.6,
+  "wickMinRatio": 0.5,
+
+  "slBuffer": 2,
+  "slMin": 10,
+  "slMax": 20,
+  "roundStep": 500
+}

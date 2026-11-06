@@ -1,0 +1,14 @@
+{
+  "name": "btc-ema-ribbon-alert",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "EMA Ribbon Pullback Scalping alert bot (BTCUSDT Binance Futures -> Telegram)",
+  "scripts": {
+    "start": "node src/main.js",
+    "dry": "node src/main.js --dry",
+    "test": "node --test test/",
+    "backtest": "node src/backtest.js"
+  },
+  "engines": { "node": ">=20" }
+}
