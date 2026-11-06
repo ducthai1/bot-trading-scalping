@@ -9,7 +9,7 @@ import { sendTelegram } from './telegram.js';
 const dry = process.argv.includes('--dry');
 const cfg = loadConfig();
 const sent = new Set();
-const ts = (ms) => new Date(ms).toLocaleString('vi-VN', { hour12: false });
+const ts = (ms) => new Date(ms).toLocaleString('vi-VN', { hour12: false, timeZone: 'Asia/Ho_Chi_Minh' });
 
 // Thống kê hoạt động & trạng thái thị trường của bot
 const stats = {
