@@ -503,7 +503,10 @@ if (port) {
         <button id="btnLong" class="btn btn-long" onclick="testTele('LONG')">🟢 Test Mẫu Alert LONG</button>
         <button id="btnShort" class="btn btn-short" onclick="testTele('SHORT')">🔴 Test Mẫu Alert SHORT</button>
       </div>
-      <div id="testRes" class="test-result"></div>
+      <div id="testRes" class="test-result">
+        <div id="testMsg" style="font-weight: 700; margin-bottom: 8px;"></div>
+        <pre id="testPreview" style="margin: 0; white-space: pre-wrap; font-family: inherit; font-size: 13px; line-height: 1.5;"></pre>
+      </div>
     </div>
   </div>
 
@@ -606,28 +609,35 @@ if (port) {
       const btnL = document.getElementById('btnLong');
       const btnS = document.getElementById('btnShort');
       const resEl = document.getElementById('testRes');
+      const msgEl = document.getElementById('testMsg');
+      const prevEl = document.getElementById('testPreview');
       btnL.disabled = true;
       btnS.disabled = true;
       resEl.style.display = 'block';
       resEl.style.background = '#0d1322';
-      resEl.style.color = '#94a3b8';
-      resEl.innerText = '⏳ Đang gửi mẫu Alert ' + side + ' đến Telegram...';
+      msgEl.style.color = '#94a3b8';
+      msgEl.innerText = '⏳ Đang gửi mẫu Alert ' + side + ' đến Telegram...';
+      prevEl.innerText = '';
       try {
         const res = await fetch('/test-tele?side=' + side);
         const data = await res.json();
         if (data.ok) {
           resEl.style.background = '#064e3b';
-          resEl.style.color = '#34d399';
-          resEl.innerText = '✅ ' + data.message + '\n\n' + data.preview.replace(/<[^>]+>/g, '');
+          msgEl.style.color = '#34d399';
+          msgEl.innerText = '✅ ' + data.message;
+          prevEl.style.color = '#e2e8f0';
+          prevEl.innerText = data.preview.replace(/<[^>]+>/g, '');
         } else {
           resEl.style.background = '#450a0a';
-          resEl.style.color = '#f87171';
-          resEl.innerText = '❌ Lỗi: ' + data.error;
+          msgEl.style.color = '#f87171';
+          msgEl.innerText = '❌ Lỗi: ' + data.error;
+          prevEl.innerText = '';
         }
       } catch (e) {
         resEl.style.background = '#450a0a';
-        resEl.style.color = '#f87171';
-        resEl.innerText = '❌ Lỗi kết nối: ' + e.message;
+        msgEl.style.color = '#f87171';
+        msgEl.innerText = '❌ Lỗi kết nối: ' + e.message;
+        prevEl.innerText = '';
       } finally {
         btnL.disabled = false;
         btnS.disabled = false;
