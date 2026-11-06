@@ -18,11 +18,14 @@ function order(r, i) {
   return 'mixed';
 }
 
-// "Máy xay thịt": ribbon order keeps flipping inside the lookback window.
+// "Máy xay thịt": EMA8 and EMA21 cross each other repeatedly (đan xoắn) inside the lookback.
+// A normal pullback only makes EMA8 dip toward EMA13 — that is not a cross and must not count.
 function isChop(r, n, cfg) {
-  let flips = 0;
-  for (let i = n - cfg.chopLookback + 1; i <= n; i++) if (order(r, i) !== order(r, i - 1)) flips++;
-  return flips >= cfg.chopFlips;
+  let crosses = 0;
+  for (let i = n - cfg.chopLookback + 1; i <= n; i++) {
+    if (Math.sign(r.e8[i] - r.e21[i]) !== Math.sign(r.e8[i - 1] - r.e21[i - 1])) crosses++;
+  }
+  return crosses >= cfg.chopFlips;
 }
 
 const enoughData = (cs, cfg) => cs.length > 21 + cfg.chopLookback + 1;

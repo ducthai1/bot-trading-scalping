@@ -1,7 +1,7 @@
 // Live bot: every minute (+closeDelayMs) evaluate the trigger TFs whose candle just closed.
 import http from 'node:http';
 import { loadConfig, checkNotional } from './config.js';
-import { fetchKlines } from './binance.js';
+import { fetchKlines, dataSource } from './binance.js';
 import { evaluate, trendOf } from './strategy.js';
 import { formatAlert } from './format.js';
 import { sendTelegram } from './telegram.js';
@@ -55,6 +55,8 @@ if (port) {
             uptimeMin: Math.floor(process.uptime() / 60),
             lastCheck: stats.lastCheckTime ? ts(stats.lastCheckTime.getTime()) : null,
             lastSummary: stats.lastCheckSummary,
+            lastError: stats.lastError || null,
+            dataSource: dataSource(),
             alertsSent: stats.alertsSentCount,
             dryRun: dry,
             market: stats.market,
@@ -78,6 +80,7 @@ if (port) {
             );
           })
           .catch((err) => {
+            reportError(err);
             res.writeHead(500, { 'Content-Type': 'application/json; charset=utf-8' });
             res.end(JSON.stringify({ ok: false, error: err.message }));
           });
@@ -751,6 +754,22 @@ async function tick(force = false) {
       continue;
     }
 
+    // Chỉ báo "Vào ngay lệnh Market" khi nến xác nhận vừa đóng (tránh kèo cũ lúc khởi động/quét tay).
+    const ageMs = Date.now() - (lastCandle.ct + 1);
+    if (ageMs > cfg.maxSignalAgeMs) {
+      summaries.push(`${tf}: SIGNAL cũ (${Math.round(ageMs / 1000)}s) — bỏ qua`);
+      stats.recentLogs.unshift({
+        time: ts(Date.now()),
+        candleTime: at,
+        tf,
+        price: lastCandle.c,
+        status: 'SIGNAL_STALE',
+        side: r.signal.side,
+        reason: `Nến xác nhận đã đóng ${Math.round(ageMs / 1000)}s trước (> ${cfg.maxSignalAgeMs / 1000}s), không gửi`,
+      });
+      continue;
+    }
+
     sent.add(r.signal.key);
     stats.alertsSentCount++;
     summaries.push(`${tf}: 🚨 SIGNAL`);
@@ -770,9 +789,22 @@ async function tick(force = false) {
     if (!dry) await sendTelegram(cfg.telegram.token, cfg.telegram.chatId, text);
   }
 
+  const px = tfs.map((tf) => stats.market.tfs[tf]?.closePrice).filter(Boolean);
+  if (px.length) stats.market.btcPrice = px[0];
+  stats.market.dataSource = dataSource();
+  stats.lastError = null;
   if (stats.recentLogs.length > 50) stats.recentLogs.length = 50;
   stats.lastCheckTime = new Date();
   if (summaries.length) stats.lastCheckSummary = summaries.join(' | ');
+}
+
+// Hiện lỗi lên dashboard (/api/status) thay vì chỉ in console.
+function reportError(e) {
+  const msg = `❌ Lỗi lấy dữ liệu: ${e.message}`;
+  console.error(`[${ts(Date.now())}] ${msg}`);
+  stats.lastError = { time: ts(Date.now()), message: e.message };
+  stats.lastCheckSummary = msg;
+  stats.market.statusText = msg;
 }
 
 function schedule() {
@@ -782,11 +814,11 @@ function schedule() {
     try {
       await tick();
     } catch (e) {
-      console.error(`[${ts(Date.now())}] Lỗi: ${e.message}`);
+      reportError(e);
     }
     schedule();
   }, next - now);
 }
 
 console.log(`Bot EMA Ribbon BTCUSDT chạy${dry ? ' (DRY - không gửi Telegram)' : ''}. Khung: ${cfg.triggerTimeframes.join(', ')}`);
-tick(true).catch((e) => console.error(`Lỗi: ${e.message}`)).finally(schedule);
+tick(true).catch(reportError).finally(schedule);

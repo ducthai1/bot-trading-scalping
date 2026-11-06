@@ -7,11 +7,12 @@
 
   "triggerTimeframes": ["3m", "5m"],
   "closeDelayMs": 2000,
+  "maxSignalAgeMs": 60000,
 
   "slopeBars": 3,
   "spreadMinPct": 0.0005,
   "chopLookback": 20,
-  "chopFlips": 4,
+  "chopFlips": 2,
 
   "swingLookback": 20,
   "pullbackMin": 5,
