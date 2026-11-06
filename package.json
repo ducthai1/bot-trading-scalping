@@ -5,9 +5,10 @@
   "type": "module",
   "description": "EMA Ribbon Pullback Scalping alert bot (BTCUSDT Binance Futures -> Telegram)",
   "scripts": {
-    "start": "node src/main.js",
-    "dry": "node src/main.js --dry",
-    "test": "node --test test/",
+    "start": "node --env-file-if-exists=.env src/main.js",
+    "dry": "node --env-file-if-exists=.env src/main.js --dry",
+    "test": "node --test 'test/**/*.js'",
+    "test:tele": "node --env-file-if-exists=.env src/test-tele.js",
     "backtest": "node src/backtest.js"
   },
   "engines": { "node": ">=20" }
