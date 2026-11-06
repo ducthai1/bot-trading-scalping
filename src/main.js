@@ -51,7 +51,7 @@ if (port) {
         );
       }
 
-      // Endpoint kiểm tra gửi tin nhắn Telegram
+      // Endpoint kiểm tra gửi tin nhắn Telegram mẫu tín hiệu Alert chuẩn
       if (url.pathname === '/test-tele') {
         if (!cfg.telegram.token || !cfg.telegram.chatId) {
           res.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
@@ -62,14 +62,46 @@ if (port) {
             })
           );
         }
-        sendTelegram(
-          cfg.telegram.token,
-          cfg.telegram.chatId,
-          `🔔 <b>Test Bot</b>: Kết nối Telegram thành công!\nBot EMA Ribbon Scalping đang chạy online 24/7 trên Render.\nThời gian: ${ts(Date.now())}`
-        )
+
+        const side = (url.searchParams.get('side') || 'LONG').toUpperCase();
+        const sampleSignal = side === 'SHORT'
+          ? {
+              side: 'SHORT',
+              tf: '5m',
+              htfTrend: 'Downtrend',
+              touchedEma: 21,
+              pbCount: 7,
+              color: 'Đỏ',
+              entry: 98450.0,
+              sl: 98468.0,
+              tp1: 98380.0,
+              tp2: 98320.0,
+            }
+          : {
+              side: 'LONG',
+              tf: '3m',
+              htfTrend: 'Uptrend',
+              touchedEma: 13,
+              pbCount: 6,
+              color: 'Xanh',
+              entry: 98450.0,
+              sl: 98435.0,
+              tp1: 98510.0,
+              tp2: 98550.0,
+            };
+
+        const alertText = formatAlert(sampleSignal, cfg);
+
+        sendTelegram(cfg.telegram.token, cfg.telegram.chatId, alertText)
           .then(() => {
             res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
-            res.end(JSON.stringify({ ok: true, message: 'Đã gửi tin nhắn test thành công tới Telegram!' }));
+            res.end(
+              JSON.stringify({
+                ok: true,
+                message: `Đã bắn tín hiệu mẫu [${sampleSignal.side}] vào Telegram!`,
+                preview: alertText,
+              })
+            );
           })
           .catch((err) => {
             res.writeHead(500, { 'Content-Type': 'application/json; charset=utf-8' });
@@ -98,10 +130,13 @@ if (port) {
     .box-val { font-size: 16px; font-weight: 600; color: #e2e8f0; }
     .tip { margin-top: 18px; padding: 12px; background: #1e1b4b; border-left: 3px solid #6366f1; border-radius: 6px; font-size: 13px; color: #c7d2fe; }
     code { background: #0f172a; padding: 3px 6px; border-radius: 4px; font-family: monospace; color: #38bdf8; display: inline-block; margin-top: 4px; word-break: break-all; }
-    .btn-test { margin-top: 16px; width: 100%; background: #2563eb; color: #ffffff; border: none; padding: 10px 16px; border-radius: 8px; font-weight: 600; font-size: 14px; cursor: pointer; transition: background 0.2s; }
-    .btn-test:hover { background: #1d4ed8; }
-    .btn-test:disabled { background: #475569; cursor: not-allowed; }
-    .test-result { margin-top: 10px; font-size: 13px; padding: 8px 12px; border-radius: 6px; display: none; line-height: 1.4; }
+    .btn-group { display: flex; gap: 8px; margin-top: 16px; }
+    .btn-test { flex: 1; border: none; padding: 10px 14px; border-radius: 8px; font-weight: 600; font-size: 13px; cursor: pointer; transition: opacity 0.2s; }
+    .btn-test:hover { opacity: 0.9; }
+    .btn-test:disabled { opacity: 0.5; cursor: not-allowed; }
+    .btn-long { background: #10b981; color: #ffffff; }
+    .btn-short { background: #ef4444; color: #ffffff; }
+    .test-result { margin-top: 10px; font-size: 13px; padding: 10px 14px; border-radius: 6px; display: none; line-height: 1.4; white-space: pre-wrap; word-break: break-word; }
   </style>
 </head>
 <body>
@@ -129,38 +164,43 @@ if (port) {
       <code>${origin}/ping</code>
     </div>
 
-    <button id="btnTest" class="btn-test" onclick="testTele()">🧪 Bấm để gửi tin nhắn Test Telegram</button>
+    <div class="btn-group">
+      <button id="btnLong" class="btn-test btn-long" onclick="testTele('LONG')">🟢 Test Mẫu Alert LONG</button>
+      <button id="btnShort" class="btn-test btn-short" onclick="testTele('SHORT')">🔴 Test Mẫu Alert SHORT</button>
+    </div>
     <div id="testRes" class="test-result"></div>
   </div>
 
   <script>
-    async function testTele() {
-      const btn = document.getElementById('btnTest');
+    async function testTele(side) {
+      const btnL = document.getElementById('btnLong');
+      const btnS = document.getElementById('btnShort');
       const resEl = document.getElementById('testRes');
-      btn.disabled = true;
-      btn.innerText = '⏳ Đang gửi tin nhắn Telegram...';
-      resEl.style.display = 'none';
+      btnL.disabled = true;
+      btnS.disabled = true;
+      resEl.style.display = 'block';
+      resEl.style.background = '#1e293b';
+      resEl.style.color = '#94a3b8';
+      resEl.innerText = '⏳ Đang gửi mẫu Alert ' + side + ' đến Telegram...';
       try {
-        const res = await fetch('/test-tele');
+        const res = await fetch('/test-tele?side=' + side);
         const data = await res.json();
-        resEl.style.display = 'block';
         if (data.ok) {
           resEl.style.background = '#064e3b';
           resEl.style.color = '#34d399';
-          resEl.innerText = '✅ ' + data.message;
+          resEl.innerText = '✅ ' + data.message + '\n\n' + data.preview.replace(/<[^>]+>/g, '');
         } else {
           resEl.style.background = '#450a0a';
           resEl.style.color = '#f87171';
           resEl.innerText = '❌ Lỗi: ' + data.error;
         }
       } catch (e) {
-        resEl.style.display = 'block';
         resEl.style.background = '#450a0a';
         resEl.style.color = '#f87171';
         resEl.innerText = '❌ Lỗi kết nối: ' + e.message;
       } finally {
-        btn.disabled = false;
-        btn.innerText = '🧪 Bấm để gửi tin nhắn Test Telegram';
+        btnL.disabled = false;
+        btnS.disabled = false;
       }
     }
   </script>
