@@ -51,6 +51,33 @@ if (port) {
         );
       }
 
+      // Endpoint kiểm tra gửi tin nhắn Telegram
+      if (url.pathname === '/test-tele') {
+        if (!cfg.telegram.token || !cfg.telegram.chatId) {
+          res.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
+          return res.end(
+            JSON.stringify({
+              ok: false,
+              error: 'Chưa cấu hình TELEGRAM_TOKEN hoặc TELEGRAM_CHAT_ID trên Render.',
+            })
+          );
+        }
+        sendTelegram(
+          cfg.telegram.token,
+          cfg.telegram.chatId,
+          `🔔 <b>Test Bot</b>: Kết nối Telegram thành công!\nBot EMA Ribbon Scalping đang chạy online 24/7 trên Render.\nThời gian: ${ts(Date.now())}`
+        )
+          .then(() => {
+            res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+            res.end(JSON.stringify({ ok: true, message: 'Đã gửi tin nhắn test thành công tới Telegram!' }));
+          })
+          .catch((err) => {
+            res.writeHead(500, { 'Content-Type': 'application/json; charset=utf-8' });
+            res.end(JSON.stringify({ ok: false, error: err.message }));
+          });
+        return;
+      }
+
       // Giao diện web trực quan khi truy cập trực tiếp bằng trình duyệt
       const html = `<!DOCTYPE html>
 <html lang="vi">
@@ -71,6 +98,10 @@ if (port) {
     .box-val { font-size: 16px; font-weight: 600; color: #e2e8f0; }
     .tip { margin-top: 18px; padding: 12px; background: #1e1b4b; border-left: 3px solid #6366f1; border-radius: 6px; font-size: 13px; color: #c7d2fe; }
     code { background: #0f172a; padding: 3px 6px; border-radius: 4px; font-family: monospace; color: #38bdf8; display: inline-block; margin-top: 4px; word-break: break-all; }
+    .btn-test { margin-top: 16px; width: 100%; background: #2563eb; color: #ffffff; border: none; padding: 10px 16px; border-radius: 8px; font-weight: 600; font-size: 14px; cursor: pointer; transition: background 0.2s; }
+    .btn-test:hover { background: #1d4ed8; }
+    .btn-test:disabled { background: #475569; cursor: not-allowed; }
+    .test-result { margin-top: 10px; font-size: 13px; padding: 8px 12px; border-radius: 6px; display: none; line-height: 1.4; }
   </style>
 </head>
 <body>
@@ -97,7 +128,42 @@ if (port) {
       💡 <b>URL Ping để giữ bot thức (UptimeRobot / Cron-job):</b><br/>
       <code>${origin}/ping</code>
     </div>
+
+    <button id="btnTest" class="btn-test" onclick="testTele()">🧪 Bấm để gửi tin nhắn Test Telegram</button>
+    <div id="testRes" class="test-result"></div>
   </div>
+
+  <script>
+    async function testTele() {
+      const btn = document.getElementById('btnTest');
+      const resEl = document.getElementById('testRes');
+      btn.disabled = true;
+      btn.innerText = '⏳ Đang gửi tin nhắn Telegram...';
+      resEl.style.display = 'none';
+      try {
+        const res = await fetch('/test-tele');
+        const data = await res.json();
+        resEl.style.display = 'block';
+        if (data.ok) {
+          resEl.style.background = '#064e3b';
+          resEl.style.color = '#34d399';
+          resEl.innerText = '✅ ' + data.message;
+        } else {
+          resEl.style.background = '#450a0a';
+          resEl.style.color = '#f87171';
+          resEl.innerText = '❌ Lỗi: ' + data.error;
+        }
+      } catch (e) {
+        resEl.style.display = 'block';
+        resEl.style.background = '#450a0a';
+        resEl.style.color = '#f87171';
+        resEl.innerText = '❌ Lỗi kết nối: ' + e.message;
+      } finally {
+        btn.disabled = false;
+        btn.innerText = '🧪 Bấm để gửi tin nhắn Test Telegram';
+      }
+    }
+  </script>
 </body>
 </html>`;
       res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
