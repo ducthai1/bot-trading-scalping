@@ -11,5 +11,11 @@
     "test:tele": "node --env-file-if-exists=.env src/test-tele.js",
     "backtest": "node src/backtest.js"
   },
-  "engines": { "node": ">=20" }
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "pm2": "^7.1.2",
+    "ws": "^8.22.1"
+  }
 }
