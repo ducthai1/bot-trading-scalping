@@ -1,0 +1,36 @@
+{
+  "capital": 100,
+  "coins": [
+    "BTCUSDT", "ETHUSDT", "BNBUSDT", "SOLUSDT", "XRPUSDT", "ADAUSDT", "LINKUSDT", "AVAXUSDT", "DOTUSDT", "LTCUSDT", "ATOMUSDT", "NEARUSDT",
+    "TRXUSDT", "BCHUSDT", "ETCUSDT", "XLMUSDT", "FILUSDT", "AAVEUSDT", "UNIUSDT", "ALGOUSDT", "VETUSDT", "HBARUSDT", "INJUSDT", "THETAUSDT",
+    "XTZUSDT", "ZECUSDT", "DASHUSDT", "NEOUSDT", "CRVUSDT", "GRTUSDT", "SNXUSDT", "COMPUSDT", "RUNEUSDT", "EGLDUSDT"
+  ],
+
+  "btcFilter": true,
+  "slotsTotal": 12,
+  "minOrderUsd": 5,
+  "circuitBreakerDrawdown": 0.5,
+  "onTimeMinutes": 30,
+  "maxEntryDelayHours": 8,
+  "forwardHorizons": [1, 3, 5, 10],
+
+  "fees": { "taker": 0.001, "maker": 0.001 },
+  "slippage": {
+    "default": 0.0008,
+    "BTCUSDT": 0.0002, "ETHUSDT": 0.0002,
+    "BNBUSDT": 0.0005, "SOLUSDT": 0.0005, "XRPUSDT": 0.0005, "ADAUSDT": 0.0005, "LINKUSDT": 0.0005,
+    "AVAXUSDT": 0.0005, "DOTUSDT": 0.0005, "LTCUSDT": 0.0005, "ATOMUSDT": 0.0005, "NEARUSDT": 0.0005
+  },
+
+  "r3": { "enabled": true, "maxPositions": 6, "maxNewPerDay": 2, "rsiEntry": 10, "rsiStart": 60, "rsiExit": 70, "minBars": 210 },
+  "breakout": { "enabled": true, "maxPositions": 6, "maxNewPerDay": 2, "lookback": 20, "slAtr": 2, "rr": 3, "maxHoldDays": 60, "minBars": 30 },
+
+  "schedule": { "dailyAfterMinutes": 2, "intradayEveryMinutes": 60, "retryMinutes": 10 },
+  "server": { "host": "127.0.0.1", "port": 3100 },
+  "dataDir": "data",
+
+  "expectations": {
+    "R3": { "winRate": 68.7, "avgRetPct": 2.33, "signalAccuracy": 72.7, "forwardExcess": { "1": -0.06, "3": 0.08, "5": 0.22, "10": -0.01 }, "note": "Backtest 2020–2026, 34 coin, lọc BTC, tối đa 2 lệnh mới/ngày. R3 không chọn coin mạnh hơn rổ — lãi đến từ việc mua khi cả thị trường giảm và bán khi hồi." },
+    "BREAKOUT": { "tpRate": 34.6, "avgR": 0.42, "signalAccuracy": 36.3, "forwardExcess": { "1": 0.19, "3": 0.46, "5": 0.59, "10": 0.97 }, "note": "Backtest 2020–2026, 34 coin, SL 2 ATR, R:R 1:3, lọc BTC" }
+  }
+}

@@ -9,7 +9,12 @@
     "dry": "node --env-file-if-exists=.env src/main.js --dry",
     "test": "node --test 'test/**/*.js'",
     "test:tele": "node --env-file-if-exists=.env src/test-tele.js",
-    "backtest": "node src/backtest.js"
+    "backtest": "node src/backtest.js",
+    "swing": "node swing/src/main.js",
+    "swing:dry": "node swing/src/main.js --dry",
+    "swing:once": "node swing/src/main.js --once --dry",
+    "swing:backtest": "node swing/src/backtest.js",
+    "test:swing": "node --test swing/test/*.test.js"
   },
   "engines": {
     "node": ">=20"

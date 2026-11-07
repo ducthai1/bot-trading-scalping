@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Swing Bot Dashboard</title>
+<style>
+  :root { --bg:#f6f7f9; --card:#fff; --text:#1d2433; --muted:#667085; --line:#e4e7ec; --up:#067647; --down:#b42318; --warn:#b54708; --accent:#3538cd; --chip:#eef2f6; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#0e1116; --card:#171b22; --text:#e6e9ef; --muted:#98a2b3; --line:#2a303b; --up:#47cd89; --down:#f97066; --warn:#fdb022; --accent:#8098f9; --chip:#222834; } }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+  header { padding: 14px 16px; border-bottom: 1px solid var(--line); background: var(--card); display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: center; }
+  header h1 { font-size: 17px; margin: 0; }
+  .muted { color: var(--muted); } .up { color: var(--up); } .down { color: var(--down); } .warn { color: var(--warn); }
+  .chip { display: inline-block; padding: 2px 8px; border-radius: 999px; background: var(--chip); font-size: 12px; }
+  main { padding: 14px 16px 40px; max-width: 1400px; margin: 0 auto; }
+  nav { display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: 14px; }
+  nav button { border: 1px solid var(--line); background: var(--card); color: var(--text); padding: 7px 12px; border-radius: 8px; cursor: pointer; font-size: 13px; }
+  nav button.on { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 10px; margin-bottom: 14px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 12px; }
+  .card .k { font-size: 12px; color: var(--muted); } .card .v { font-size: 20px; font-weight: 650; margin-top: 2px; } .card .s { font-size: 12px; color: var(--muted); margin-top: 2px; }
+  section { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 12px; margin-bottom: 14px; }
+  section h2 { font-size: 15px; margin: 0 0 4px; } section p.note { margin: 0 0 10px; color: var(--muted); font-size: 12px; }
+  .scroll { overflow-x: auto; }
+  table { border-collapse: collapse; width: 100%; font-size: 12.5px; }
+  th, td { padding: 6px 8px; border-bottom: 1px solid var(--line); text-align: right; white-space: nowrap; }
+  th { color: var(--muted); font-weight: 600; position: sticky; top: 0; background: var(--card); }
+  th:first-child, td:first-child, td.l, th.l { text-align: left; }
+  tr.total td { font-weight: 650; }
+  .filters { display: flex; flex-wrap: wrap; gap: 8px; margin: 6px 0 10px; }
+  select, input { background: var(--card); color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 5px 8px; font-size: 13px; }
+  .actions button { border: 1px solid var(--line); background: var(--card); color: var(--text); padding: 5px 10px; border-radius: 6px; cursor: pointer; font-size: 12px; }
+  .hidden { display: none; }
+  .todo li { margin: 4px 0; }
+  svg text { fill: var(--muted); font-size: 11px; }
+  @media (max-width: 600px) { header { flex-direction: column; align-items: flex-start; } .card .v { font-size: 18px; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>Swing Bot · R3 + Breakout</h1>
+  <span id="mode" class="chip">…</span>
+  <span id="livebadge" class="chip">Realtime: …</span>
+  <span id="jobs" class="muted"></span>
+  <span id="err" class="down"></span>
+  <span class="actions" style="margin-left:auto">
+    <input id="key" type="password" placeholder="admin key" size="10" title="SWING_ADMIN_KEY">
+    <button data-act="run">Chạy job đến hạn</button>
+    <button data-act="test-telegram">Test Telegram</button>
+    <button data-act="reset-breaker">Reset cầu dao</button>
+  </span>
+</header>
+<main>
+  <nav id="tabs">
+    <button data-tab="overview" class="on">Tổng quan</button>
+    <button data-tab="trades">Lịch sử lệnh</button>
+    <button data-tab="periods">Theo giai đoạn</button>
+    <button data-tab="signals">Tín hiệu đúng / sai</button>
+    <button data-tab="eval">Kiểm chứng & đánh giá</button>
+    <button data-tab="log">Nhật ký</button>
+  </nav>
+
+  <div id="tab-overview">
+    <div class="cards" id="cards"></div>
+    <section><h2>Việc cần làm (job gần nhất)</h2><p class="note">Bot không tự đặt lệnh. Mua/bán bằng lệnh Market trên Binance <b>spot</b>; với Breakout đặt lệnh OCO theo SL/TP.</p><div id="todo"></div></section>
+    <section><h2>Giá realtime & tín hiệu dự kiến</h2><p class="note">Giá từ WebSocket Binance spot (cập nhật mỗi 5 giây). Cột "nếu đóng cửa bây giờ" chỉ để <b>quan sát</b> — tín hiệu thật chỉ tính khi nến ngày đóng lúc 07:00 sáng; không vào lệnh sớm.</p><div class="scroll"><table id="watch"></table></div></section>
+    <section><h2>Lệnh đang mở</h2><p class="note">Giá hiện tại cập nhật mỗi giờ. Lãi/lỗ đã trừ phí bán dự kiến.</p><div class="scroll"><table id="open"></table></div></section>
+    <section><h2>So với backtest — chỉ báo có chạy như kỳ vọng?</h2><p class="note">Khoảng tin cậy 95% (Wilson). Kỳ vọng nằm trong khoảng ⇒ phù hợp; cần ≥ 20 lệnh mới nên kết luận.</p><div class="scroll"><table id="expect"></table></div></section>
+    <section><h2>Đường vốn</h2><div id="chart"></div></section>
+  </div>
+
+  <div id="tab-trades" class="hidden">
+    <section><h2>Lịch sử lệnh (sổ giả lập)</h2>
+      <div class="filters"><select id="fTS"><option value="">Mọi chiến lược</option><option>R3</option><option>BREAKOUT</option></select><select id="fTM"><option value="">Mọi tháng</option></select><select id="fTR"><option value="">Mọi kết quả</option><option value="win">Lãi</option><option value="loss">Lỗ</option></select><a href="/api/trades.csv">⬇ CSV</a></div>
+      <div class="scroll"><table id="trades"></table></div></section>
+  </div>
+
+  <div id="tab-periods" class="hidden">
+    <section><h2>Theo tháng</h2><p class="note">Lợi nhuận theo vốn đánh dấu cuối ngày; số lệnh tính theo ngày đóng lệnh.</p><div class="scroll"><table id="monthly"></table></div></section>
+    <section><h2>Theo năm</h2><div class="scroll"><table id="yearly"></table></div></section>
+    <section><h2>Theo chiến lược</h2><div class="scroll"><table id="bystrat"></table></div></section>
+  </div>
+
+  <div id="tab-signals" class="hidden">
+    <section><h2>Độ chính xác chỉ báo</h2><p class="note">Mỗi tín hiệu (kể cả bị bỏ qua) được theo dõi như một lệnh giả định cùng luật thoát. "Đúng" = lệnh giả định có lãi sau phí. MFE/MAE = lãi tạm cao nhất / lỗ tạm sâu nhất trong lúc giữ.</p>
+      <div class="scroll"><table id="accS"></table></div><br><div class="scroll"><table id="accD"></table></div><br><div class="scroll"><table id="accM"></table></div></section>
+    <section><h2>Sổ tín hiệu</h2>
+      <div class="filters"><select id="fSS"><option value="">Mọi chiến lược</option><option>R3</option><option>BREAKOUT</option></select><select id="fSD"><option value="">Mọi quyết định</option><option value="taken">Đã vào lệnh</option><option value="skipped">Bỏ qua</option><option value="pending">Chờ</option></select><select id="fSR"><option value="">Mọi kết quả</option><option value="right">Đúng</option><option value="wrong">Sai</option><option value="open">Đang theo dõi</option></select><a href="/api/signals.csv">⬇ CSV</a></div>
+      <div class="scroll"><table id="signals"></table></div></section>
+  </div>
+
+  <div id="tab-eval" class="hidden">
+    <section><h2>Kết luận tạm của đợt chạy thử</h2><p class="note">Bot tự chấm mọi tín hiệu (kể cả không vào lệnh) và so với backtest 2020–2026. Cần ≥ 20 tín hiệu có kết quả cho mỗi chiến lược mới nên kết luận — thường 3–6 tuần.</p><div id="verdict" style="font-size:15px;margin:6px 0 12px"></div><div class="scroll"><table id="evalS"></table></div></section>
+    <section><h2>Tín hiệu có thật sự tốt hơn thị trường? (lợi nhuận sau N ngày so với rổ 34 coin)</h2><p class="note">Đo giá đóng cửa ngày tín hiệu → N ngày sau, trừ đi trung bình cả rổ cùng kỳ. Dương = coin có tín hiệu chạy hơn thị trường. Độc lập với luật thoát lệnh.</p><div class="scroll"><table id="fwd"></table></div></section>
+  </div>
+
+  <div id="tab-log" class="hidden">
+    <section><h2>Nhật ký hệ thống</h2><div class="scroll"><table id="events"></table></div></section>
+    <section><h2>Lệnh mua đã ghi</h2><div class="scroll"><table id="orders"></table></div><p class="note"><a href="/api/equity.csv">⬇ CSV đường vốn</a></p></section>
+  </div>
+</main>
+<script>
+const $ = (id) => document.getElementById(id);
+const VN = (ms) => ms == null ? '-' : new Date(ms).toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh', hour12: false });
+const D = (ms) => ms == null ? '-' : new Date(ms).toISOString().slice(0, 10);
+const n2 = (x, d = 2) => x == null || Number.isNaN(x) ? '-' : Number(x).toFixed(d);
+const pc = (x, d = 1) => x == null || Number.isNaN(x) ? '-' : `${x >= 0 ? '+' : ''}${Number(x).toFixed(d)}%`;
+const px = (x) => x == null ? '-' : x >= 100 ? x.toFixed(2) : x >= 1 ? x.toFixed(4) : x.toPrecision(5);
+const cls = (x) => x == null ? '' : x > 0 ? 'up' : x < 0 ? 'down' : '';
+const SN = { R3: 'R3', BREAKOUT: 'Breakout' };
+let R = null;
+try { $('key').value = sessionStorage.getItem('swingKey') || ''; } catch {}
+
+function table(el, cols, rows, total) {
+  el.textContent = '';
+  const thead = el.createTHead().insertRow();
+  for (const c of cols) { const th = document.createElement('th'); th.textContent = c[0]; if (c[3]) th.className = 'l'; thead.appendChild(th); }
+  const tb = el.createTBody();
+  const add = (r, isTotal) => {
+    const tr = tb.insertRow(); if (isTotal) tr.className = 'total';
+    for (const c of cols) { const td = tr.insertCell(); const v = c[1](r); td.textContent = v == null ? '-' : v; const k = c[2] ? c[2](r) : ''; if (k) td.className = k; if (c[3]) td.classList.add('l'); }
+  };
+  if (!rows.length) { const tr = tb.insertRow(); const td = tr.insertCell(); td.colSpan = cols.length; td.className = 'l muted'; td.textContent = 'Chưa có dữ liệu'; return; }
+  rows.forEach((r) => add(r)); if (total) add(total, true);
+}
+function card(k, v, s, c) { return `<div class="card"><div class="k">${k}</div><div class="v ${c || ''}">${v}</div><div class="s">${s || ''}</div></div>`; }
+
+function render() {
+  const S = R.summary, st = R.status;
+  $('mode').textContent = st.mode === 'dry' ? 'DRY (không gửi Telegram)' : 'Cảnh báo Telegram · sổ giả lập';
+  $('jobs').textContent = `Job ngày gần nhất: ${VN(st.lastDailyOk)} · kế tiếp: ${VN(st.nextDailyAt)} · Binance: ${st.net.requests} req${st.net.lastWeight ? `, weight ${st.net.lastWeight}/6000` : ''}`;
+  $('err').textContent = st.lastError ? `Lỗi: ${st.lastError.message} (${VN(st.lastError.at)})` : '';
+  const acts = st.lastActions?.events || [];
+  const buys = acts.filter((e) => e.type === 'trade_open').map((e) => e.position), sells = acts.filter((e) => e.type === 'trade_close').map((e) => e.trade);
+  const ul = document.createElement('ul'); ul.className = 'todo';
+  for (const p of buys) { const li = document.createElement('li'); li.textContent = `🟢 MUA ${p.symbol} [${SN[p.strategy]}] ~${n2(p.cost)}$ (${p.qty}) giá ~${px(p.entryPx)}` + (p.sl ? ` · SL ${px(p.sl)} · TP ${px(p.tp)} (OCO)` : ' · bán khi bot báo RSI(2) > 70') + (p.late ? ' ⚠️ trễ' : ''); ul.appendChild(li); }
+  for (const t of sells) { const li = document.createElement('li'); li.textContent = `${t.reason === 'TP' || t.reason === 'SL' ? '📌 Đã đóng' : '🔴 BÁN'} ${t.symbol} [${SN[t.strategy]}] ${t.reason} → ${pc(t.ret * 100)} (${n2(t.pnl)}$)`; ul.appendChild(li); }
+  $('todo').textContent = '';
+  if (!buys.length && !sells.length) { $('todo').textContent = st.lastActions ? `Không có lệnh nào trong job ${VN(st.lastActions.at)}.` : 'Chưa chạy job nào từ lúc khởi động bot.'; } else $('todo').appendChild(ul);
+
+  renderTop();
+
+  const E = R.expectations, bs = R.byStrategy, accS = Object.fromEntries(R.accuracy.byStrategy.map((a) => [a.group, a]));
+  const verdict = (n, ci, exp) => n < 20 ? 'Chưa đủ dữ liệu (< 20)' : !ci ? '-' : exp < ci[0] ? 'Tốt hơn kỳ vọng' : exp > ci[1] ? '⚠️ Thấp hơn kỳ vọng' : 'Phù hợp kỳ vọng';
+  const wil = (k, n) => { if (!n) return null; const z = 1.96, p = k / n, d = 1 + z * z / n, c = p + z * z / (2 * n), m = z * Math.sqrt(p * (1 - p) / n + z * z / (4 * n * n)); return [(c - m) / d * 100, (c + m) / d * 100]; };
+  const rows = [];
+  const r3 = bs.R3; rows.push({ m: 'R3 · tỉ lệ thắng', live: r3.win, ci: r3.winCI, n: r3.n, exp: E.R3.winRate, unit: '%' });
+  rows.push({ m: 'R3 · lãi TB/lệnh', live: r3.avgRet, n: r3.n, exp: E.R3.avgRetPct, unit: '%' });
+  const bo = bs.BREAKOUT, tpk = bo.n ? Math.round(bo.tpRate / 100 * bo.n) : 0; rows.push({ m: 'Breakout · tỉ lệ chạm TP', live: bo.tpRate, ci: wil(tpk, bo.n), n: bo.n, exp: E.BREAKOUT.tpRate, unit: '%' });
+  rows.push({ m: 'Breakout · R TB/lệnh', live: bo.avgR, n: bo.n, exp: E.BREAKOUT.avgR, unit: 'R' });
+  for (const [k, name] of [['R3', 'R3'], ['BREAKOUT', 'Breakout']]) { const a = accS[name]; rows.push({ m: `${name} · chỉ báo đúng (mọi tín hiệu)`, live: a?.accuracy, ci: a?.accuracyCI, n: a?.resolved ?? 0, exp: E[k].signalAccuracy, unit: '%' }); }
+  table($('expect'), [['Chỉ số', (r) => r.m, null, 1], ['Thực tế', (r) => r.live == null ? '-' : n2(r.live, 2) + (r.unit === '%' ? '%' : 'R')], ['Khoảng 95%', (r) => r.ci ? `${n2(r.ci[0], 1)}–${n2(r.ci[1], 1)}%` : '-'], ['Số mẫu', (r) => r.n], ['Backtest', (r) => n2(r.exp, 2) + (r.unit === '%' ? '%' : 'R')], ['Đánh giá', (r) => r.ci ? verdict(r.n, r.ci, r.exp) : r.n < 20 ? 'Chưa đủ dữ liệu (< 20)' : r.live >= r.exp ? 'Bằng/hơn kỳ vọng' : 'Thấp hơn kỳ vọng', (r) => /Thấp/.test(verdict(r.n, r.ci, r.exp)) ? 'warn' : '', 1]], rows);
+  chart();
+
+  const months = [...new Set(R.trades.map((t) => D(t.exitTime).slice(0, 7)))]; const fm = $('fTM'); const cur = fm.value;
+  fm.innerHTML = '<option value="">Mọi tháng</option>' + months.map((m) => `<option>${m}</option>`).join(''); fm.value = cur;
+  renderTrades(); renderPeriods(); renderSignals(); renderLog(); renderEval();
+}
+
+function renderTop() {
+  const S = R.summary, st = R.status;
+  const ddc = S.ddNow > R.config.breakerAt * 0.6 ? 'down' : '';
+  $('cards').innerHTML = [
+    card('Vốn hiện tại', `${n2(S.equityLive)}$`, `Ban đầu ${n2(S.capital)}$`),
+    card('Lãi/lỗ tổng', pc(S.totalRet), `Đã chốt ${n2(S.closedPnl)}$ · đang mở ${n2(S.openPnl)}$`, cls(S.totalRet)),
+    card('Sụt vốn', `${n2(S.ddNow, 1)}%`, `Tối đa ${n2(S.maxDD, 1)}% · cầu dao ${R.config.breakerAt}%`, ddc),
+    card('Tiền mặt', `${n2(S.cash)}$`, `Mỗi lệnh ~${n2(R.config.perTrade)}$ (1/${R.config.slotsTotal})`),
+    card('Lệnh đang mở', `${S.openCount}`, `R3 tối đa ${R.config.r3.maxPositions} · Breakout tối đa ${R.config.breakout.maxPositions}`),
+    card('Đã đóng / tín hiệu', `${S.trades} / ${S.signals}`, `Ngày chốt gần nhất ${D(S.lastClosedDay)}`),
+    card('BTC > SMA200', st.btcOk == null ? '-' : st.btcOk ? 'Có' : 'Không', st.btcOk === false ? 'Không mở lệnh mới' : 'Lọc thị trường chung', st.btcOk === false ? 'warn' : ''),
+    card('Cầu dao', S.breaker ? 'ĐANG NGẮT' : 'Bình thường', S.breaker ? `Từ ${D(S.breaker.at)}, sụt ${n2(S.breaker.dd * 100, 1)}%` : 'Ngắt khi sụt quá ngưỡng', S.breaker ? 'down' : 'up'),
+  ].join('');
+
+  table($('open'), [
+    ['Coin', (p) => p.symbol, null, 1], ['Chiến lược', (p) => SN[p.strategy], null, 1], ['Vào ngày', (p) => D(p.entryTime)], ['Giá vào', (p) => px(p.entryPx)], ['Giá nay', (p) => px(p.px)],
+    ['Vốn $', (p) => n2(p.cost)], ['Lãi/lỗ $', (p) => n2(p.pnl), (p) => cls(p.pnl)], ['%', (p) => pc(p.ret * 100), (p) => cls(p.ret)], ['R', (p) => n2(p.R)], ['Giữ (ngày)', (p) => p.daysHeld],
+    ['SL', (p) => px(p.sl)], ['Cách SL', (p) => pc(p.toSL)], ['TP', (p) => px(p.tp)], ['Cách TP', (p) => pc(p.toTP)], ['MFE / MAE', (p) => `${pc(p.mfe * 100)} / ${pc(p.mae * 100)}`],
+  ], R.open);
+}
+
+function renderTrades() {
+  const s = $('fTS').value, m = $('fTM').value, r = $('fTR').value;
+  const T = R.trades.filter((t) => (!s || t.strategy === s) && (!m || D(t.exitTime).startsWith(m)) && (!r || (r === 'win' ? t.ret > 0 : t.ret <= 0)));
+  const tot = { symbol: `Tổng ${T.length} lệnh`, pnl: T.reduce((a, t) => a + t.pnl, 0), cost: T.reduce((a, t) => a + t.cost, 0) };
+  tot.ret = tot.cost ? tot.pnl / tot.cost : 0;
+  table($('trades'), [
+    ['Coin', (t) => t.symbol, null, 1], ['Chiến lược', (t) => t.strategyName ?? '', null, 1], ['Vào', (t) => t.entryTime ? D(t.entryTime) : ''], ['Giá vào', (t) => t.entryPx ? px(t.entryPx) : ''], ['Ra', (t) => t.exitTime ? D(t.exitTime) : ''], ['Giá ra', (t) => t.exitPx ? px(t.exitPx) : ''],
+    ['Vốn $', (t) => n2(t.cost)], ['Lãi/lỗ $', (t) => n2(t.pnl), (t) => cls(t.pnl)], ['%', (t) => pc(t.ret * 100), (t) => cls(t.ret)], ['R', (t) => n2(t.R)], ['Giữ', (t) => t.days ?? ''], ['Lý do thoát', (t) => t.reasonText ?? '', null, 1], ['MFE', (t) => t.mfe == null ? '' : pc(t.mfe * 100)], ['MAE', (t) => t.mae == null ? '' : pc(t.mae * 100)], ['Trễ', (t) => (t.lateEntry ? 'vào ' : '') + (t.lateExit ? 'ra' : '')],
+  ], T, T.length ? tot : null);
+}
+
+function renderPeriods() {
+  const cols = (label) => [
+    [label, (r) => r.period, null, 1], ['Vốn đầu', (r) => n2(r.start)], ['Vốn cuối', (r) => n2(r.end)], ['Lãi/lỗ %', (r) => pc(r.ret), (r) => cls(r.ret)], ['Sụt max %', (r) => n2(r.maxDD, 1)],
+    ['Lệnh', (r) => r.all.n], ['Thắng %', (r) => n2(r.all.win, 1)], ['P&L $', (r) => n2(r.all.pnl), (r) => cls(r.all.pnl)],
+    ['R3: lệnh', (r) => r.R3.n], ['R3: thắng %', (r) => n2(r.R3.win, 1)], ['R3: TB %', (r) => pc(r.R3.avgRet, 2)], ['BO: lệnh', (r) => r.BREAKOUT.n], ['BO: chạm TP %', (r) => n2(r.BREAKOUT.tpRate, 1)], ['BO: TB R', (r) => n2(r.BREAKOUT.avgR)],
+  ];
+  table($('monthly'), cols('Tháng'), R.monthly.slice().reverse());
+  table($('yearly'), cols('Năm'), R.yearly.slice().reverse());
+  const bs = Object.entries(R.byStrategy).map(([k, v]) => ({ k, ...v }));
+  table($('bystrat'), [['Chiến lược', (r) => SN[r.k], null, 1], ['Lệnh', (r) => r.n], ['Thắng %', (r) => n2(r.win, 1)], ['95%', (r) => r.winCI ? `${n2(r.winCI[0], 0)}–${n2(r.winCI[1], 0)}%` : '-'], ['Lãi TB %', (r) => pc(r.avgWin, 2)], ['Lỗ TB %', (r) => pc(r.avgLoss, 2)], ['Kỳ vọng %', (r) => pc(r.avgRet, 2), (r) => cls(r.avgRet)], ['R TB', (r) => n2(r.avgR)], ['Chạm TP %', (r) => n2(r.tpRate, 1)], ['PF', (r) => n2(r.pf)], ['P&L $', (r) => n2(r.pnl), (r) => cls(r.pnl)], ['Giữ TB', (r) => n2(r.hold, 1)], ['Tốt nhất', (r) => pc(r.best)], ['Tệ nhất', (r) => pc(r.worst)]], bs);
+}
+
+function renderSignals() {
+  const accCols = (label) => [[label, (a) => a.group, null, 1], ['Tín hiệu', (a) => a.signals], ['Có kết quả', (a) => a.resolved], ['Đang theo dõi', (a) => a.open], ['Đúng %', (a) => n2(a.accuracy, 1)], ['95%', (a) => a.accuracyCI ? `${n2(a.accuracyCI[0], 0)}–${n2(a.accuracyCI[1], 0)}%` : '-'], ['Lãi TB %', (a) => pc(a.avgRet, 2), (a) => cls(a.avgRet)], ['R TB', (a) => n2(a.avgR)], ['MFE TB', (a) => pc(a.avgMfe)], ['MAE TB', (a) => pc(a.avgMae)], ['Giữ TB', (a) => n2(a.avgDays, 1)]];
+  table($('accS'), accCols('Theo chiến lược'), R.accuracy.byStrategy);
+  table($('accD'), accCols('Theo quyết định của bot'), R.accuracy.byDecision);
+  table($('accM'), accCols('Theo tháng'), R.accuracy.byMonth.slice().reverse());
+  const s = $('fSS').value, d = $('fSD').value, r = $('fSR').value;
+  const L = R.signals.filter((x) => (!s || x.strategy === s) && (!d || x.status === d) && (!r || (r === 'open' ? !x.result : r === 'right' ? x.result?.ret > 0 : x.result && x.result.ret <= 0)));
+  const vals = (x) => x.values ? (x.strategy === 'R3' ? `RSI2 ${n2(x.values.rsi2, 1)} (từ ${n2(x.values.rsi2Start, 0)})` : `vượt ${px(x.values.level)} · ATR ${n2(x.values.atrPct * 100, 1)}%`) : '';
+  table($('signals'), [
+    ['Ngày', (x) => D(x.day)], ['Coin', (x) => x.symbol, null, 1], ['Chiến lược', (x) => SN[x.strategy], null, 1], ['Chỉ báo', vals, null, 1], ['BTC ok', (x) => x.btcOk ? '✓' : '✗'],
+    ['Quyết định', (x) => x.status === 'taken' ? 'Vào lệnh' : x.status === 'skipped' ? 'Bỏ qua' : 'Chờ', null, 1], ['Lý do bỏ qua', (x) => x.reasonText ?? '', null, 1],
+    ['Kết quả', (x) => x.result ? x.resultText : 'Đang theo dõi', null, 1], ['Ra ngày', (x) => x.result ? D(x.result.exitTime) : ''], ['%', (x) => x.result ? pc(x.result.ret * 100) : '', (x) => cls(x.result?.ret)], ['R', (x) => x.result?.R == null ? '' : n2(x.result.R)],
+    ['Giữ', (x) => x.result?.days ?? ''], ['MFE', (x) => x.result ? pc(x.result.mfe * 100) : ''], ['MAE', (x) => x.result ? pc(x.result.mae * 100) : ''], ['Đúng?', (x) => x.result ? (x.result.ret > 0 ? '✓ Đúng' : '✗ Sai') : '…', (x) => x.result ? (x.result.ret > 0 ? 'up' : 'down') : ''],
+  ], L);
+}
+
+function renderLog() {
+  table($('events'), [['Thời gian', (e) => VN(e.at), null, 1], ['Mức', (e) => e.level, (e) => e.level === 'error' ? 'down' : e.level === 'warn' ? 'warn' : '', 1], ['Nội dung', (e) => e.msg, null, 1]], R.events);
+  table($('orders'), [['Mã', (o) => o.id, null, 1], ['Coin', (o) => o.symbol, null, 1], ['Chiến lược', (o) => SN[o.strategy], null, 1], ['Thời gian', (o) => VN(o.entryTime)], ['Giá', (o) => px(o.entryPx)], ['SL', (o) => px(o.sl)], ['TP', (o) => px(o.tp)], ['Vốn $', (o) => n2(o.cost)], ['Trễ', (o) => o.late ? 'có' : '']], R.orders);
+}
+
+function chart() {
+  const E = R.equity; const el = $('chart');
+  if (E.length < 2) { el.textContent = 'Chưa đủ dữ liệu (cần ít nhất 2 ngày).'; return; }
+  const W = Math.max(320, el.clientWidth || 800), H = 220, P = 36;
+  const ys = E.map((e) => e.equity), lo = Math.min(...ys, R.summary.capital), hi = Math.max(...ys, R.summary.capital);
+  const x = (i) => P + (i / (E.length - 1)) * (W - P - 8), y = (v) => 8 + (1 - (v - lo) / ((hi - lo) || 1)) * (H - 30);
+  const path = E.map((e, i) => `${i ? 'L' : 'M'}${x(i).toFixed(1)},${y(e.equity).toFixed(1)}`).join('');
+  const base = y(R.summary.capital);
+  el.innerHTML = `<svg width="100%" viewBox="0 0 ${W} ${H}" role="img" aria-label="Đường vốn"><line x1="${P}" x2="${W - 8}" y1="${base}" y2="${base}" stroke="currentColor" stroke-opacity=".25" stroke-dasharray="4 4"/><path d="${path}" fill="none" stroke="var(--accent)" stroke-width="2"/><text x="2" y="${y(hi) + 4}">${hi.toFixed(0)}</text><text x="2" y="${y(lo)}">${lo.toFixed(0)}</text><text x="${P}" y="${H - 4}">${D(E[0].t)}</text><text x="${W - 80}" y="${H - 4}">${D(E.at(-1).t)}</text></svg>`;
+}
+
+function renderEval() {
+  const E = R.evaluation;
+  $('verdict').textContent = `Ngày thứ ${E.daysRunning} · ${E.overall}`;
+  table($('evalS'), [
+    ['Chiến lược', (s) => s.name, null, 1], ['Tín hiệu có kết quả', (s) => s.resolved], ['Đang theo dõi', (s) => s.open], ['Đúng %', (s) => n2(s.accuracy, 1)],
+    ['Khoảng 95%', (s) => s.ci ? `${n2(s.ci[0], 1)}–${n2(s.ci[1], 1)}%` : '-'], ['Backtest', (s) => n2(s.expected, 1) + '%'],
+    ['Hơn rổ sau 5 ngày', (s) => s.fwd5 == null ? '-' : pc(s.fwd5, 2), (s) => cls(s.fwd5)], ['Backtest 5 ngày', (s) => s.fwd5Exp == null ? '-' : pc(s.fwd5Exp, 2)], ['Đánh giá', (s) => s.verdict, (s) => s.verdict.startsWith('⚠️') ? 'warn' : '', 1],
+  ], E.strategies);
+  const X = R.expectations;
+  table($('fwd'), [
+    ['Chiến lược', (r) => SN[r.strategy], null, 1], ['Sau (ngày)', (r) => r.h], ['Mẫu', (r) => r.n], ['Coin %', (r) => pc(r.avgRet, 2), (r) => cls(r.avgRet)], ['Rổ %', (r) => pc(r.avgBasket, 2)],
+    ['Hơn rổ %', (r) => pc(r.avgExcess, 2), (r) => cls(r.avgExcess)], ['Khoảng 95%', (r) => r.excessCI ? `${pc(r.excessCI[0], 2)} … ${pc(r.excessCI[1], 2)}` : '-'], ['% lần hơn rổ', (r) => n2(r.beatPct, 0)],
+    ['Backtest hơn rổ %', (r) => { const v = X?.[r.strategy]?.forwardExcess?.[String(r.h)]; return v == null ? '-' : pc(v, 2); }],
+  ], R.forward);
+}
+
+async function loadLive() {
+  try {
+    const L = await (await fetch('/api/live')).json();
+    const f = L.feed;
+    $('livebadge').textContent = !f ? 'Realtime: tắt' : f.healthy ? `Realtime: ● kết nối (${new Date(f.lastMsgAt).toLocaleTimeString('vi-VN', { hour12: false })})` : `Realtime: ${f.status} (thử lại ${f.reconnects})`;
+    $('livebadge').className = 'chip ' + (f?.healthy ? 'up' : 'warn');
+    const W = L.watch;
+    if (W) table($('watch'), [
+      ['Coin', (r) => r.symbol, null, 1], ['Giá', (r) => px(r.price)], ['Hôm nay', (r) => pc(r.chgToday == null ? null : r.chgToday * 100), (r) => cls(r.chgToday)], ['Trên SMA200', (r) => r.trend ? '✓' : '✗', (r) => r.trend ? 'up' : 'down'],
+      ['RSI(2)', (r) => n2(r.rsi2, 1)], ['RSI giảm liên tiếp', (r) => r.rsiFalling ? `${r.rsiFalling} ngày` : ''], ['Đỉnh 20 ngày', (r) => px(r.level)], ['Cách đỉnh', (r) => pc(r.toLevel * 100), (r) => r.toLevel <= 0 ? 'up' : ''],
+      ['Nếu đóng cửa bây giờ', (r) => [r.r3 ? 'R3' : '', r.breakout ? 'Breakout' : ''].filter(Boolean).join(' + ') || '—', (r) => r.r3 || r.breakout ? 'up' : 'muted', 1],
+    ], W.rows);
+    if (R) {
+      const byId = Object.fromEntries(L.open.map((o) => [o.id, o]));
+      for (const p of R.open) { const o = byId[p.id]; if (o) Object.assign(p, { px: o.px, ret: o.ret, pnl: o.pnl, toSL: o.toSL, toTP: o.toTP }); }
+      R.summary.equityLive = L.equity; R.summary.totalRet = (L.equity / R.summary.capital - 1) * 100;
+      renderTop();
+    }
+  } catch { $('livebadge').textContent = 'Realtime: không tải được'; }
+}
+
+async function load() {
+  try { const r = await fetch('/api/report'); R = await r.json(); render(); }
+  catch (e) { $('err').textContent = 'Không tải được dữ liệu: ' + e.message; }
+}
+$('tabs').addEventListener('click', (e) => {
+  const t = e.target.dataset.tab; if (!t) return;
+  for (const b of $('tabs').children) b.classList.toggle('on', b.dataset.tab === t);
+  for (const id of ['overview', 'trades', 'periods', 'signals', 'eval', 'log']) $('tab-' + id).classList.toggle('hidden', id !== t);
+  if (t === 'overview' && R) chart();
+});
+for (const id of ['fTS', 'fTM', 'fTR']) $(id).addEventListener('change', () => R && renderTrades());
+for (const id of ['fSS', 'fSD', 'fSR']) $(id).addEventListener('change', () => R && renderSignals());
+document.querySelector('.actions').addEventListener('click', async (e) => {
+  const act = e.target.dataset.act; if (!act) return;
+  if (act === 'reset-breaker' && !confirm('Reset cầu dao? Chỉ làm khi đã xem lại chiến lược.')) return;
+  const key = $('key').value; try { sessionStorage.setItem('swingKey', key); } catch {}
+  e.target.disabled = true;
+  try { const r = await fetch('/api/admin/' + act, { method: 'POST', headers: { 'x-admin-key': key } }); const j = await r.json(); alert(j.ok ? 'Xong' : 'Lỗi: ' + j.error); await load(); }
+  catch (err) { alert('Lỗi: ' + err.message); } finally { e.target.disabled = false; }
+});
+load(); setInterval(load, 60000);
+loadLive(); setInterval(loadLive, 5000);
+</script>
+</body>
+</html>
