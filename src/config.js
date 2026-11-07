@@ -18,3 +18,17 @@ export function checkNotional(cfg) {
     console.log(`✅ ${msg}`);
   }
 }
+
+// Size at the current price: quantity is rounded down to the 0.001 BTC step, and fees are what a
+// 10–20 giá SL has to beat (Market entry + Market/stop exit, both taker).
+export function checkSize(cfg, price) {
+  const qty = Math.floor((cfg.capital * cfg.leverage) / price / cfg.minQty + 1e-9) * cfg.minQty;
+  if (qty < cfg.minQty) {
+    console.warn(`⚠️ Giá ${price}: ${cfg.capital}$ x ${cfg.leverage}x không đủ mua ${cfg.minQty} BTC (cần ${(price * cfg.minQty).toFixed(2)}$ notional).`);
+    return;
+  }
+  const fee = price * qty * 2 * cfg.takerFee;
+  const feePts = price * 2 * cfg.takerFee;
+  const warn = feePts > cfg.slMax ? '⚠️' : 'ℹ️';
+  console.log(`${warn} Khối lượng ${qty.toFixed(3)} BTC (~${(price * qty).toFixed(2)}$). Phí vào+ra ~${fee.toFixed(3)}$ ≈ ${feePts.toFixed(0)} giá (SL ${cfg.slMin}–${cfg.slMax} giá).`);
+}

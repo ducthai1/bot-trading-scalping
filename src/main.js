@@ -1,16 +1,21 @@
 // Live bot: real-time WebSocket connection to Binance Futures (Zero HTTP Request Architecture).
 import http from 'node:http';
-import { loadConfig, checkNotional } from './config.js';
-import { fetchKlines, dataSource } from './binance.js';
+import { loadConfig, checkNotional, checkSize } from './config.js';
+import { dataSource } from './binance.js';
 import { MarketStream } from './ws-stream.js';
 import { evaluate, trendOf } from './strategy.js';
+import { SignalGate } from './signal-gate.js';
 import { formatAlert } from './format.js';
 import { sendTelegram } from './telegram.js';
 
 const dry = process.argv.includes('--dry');
 const cfg = loadConfig();
 const sent = new Set();
+const gate = new SignalGate(cfg);
 const ts = (ms) => new Date(ms).toLocaleString('vi-VN', { hour12: false, timeZone: 'Asia/Ho_Chi_Minh' });
+// /api/scan and /test-tele act (Telegram, scan): only with ?key=ADMIN_KEY. Without ADMIN_KEY they are off.
+const ADMIN_KEY = process.env.ADMIN_KEY || '';
+const isAdmin = (url) => ADMIN_KEY !== '' && url.searchParams.get('key') === ADMIN_KEY;
 
 // Thống kê hoạt động & trạng thái thị trường của bot
 const stats = {
@@ -66,6 +71,16 @@ if (port) {
             dryRun: dry,
             market: stats.market,
             recentLogs: stats.recentLogs,
+          })
+        );
+      }
+
+      if ((url.pathname === '/api/scan' || url.pathname === '/test-tele') && !isAdmin(url)) {
+        res.writeHead(403, { 'Content-Type': 'application/json; charset=utf-8' });
+        return res.end(
+          JSON.stringify({
+            ok: false,
+            error: ADMIN_KEY ? 'Sai hoặc thiếu ?key=' : 'Chưa đặt biến môi trường ADMIN_KEY nên chức năng này đang tắt.',
           })
         );
       }
@@ -430,7 +445,7 @@ if (port) {
       <div class="market-status-box">
         <div id="marketHeadline" class="status-headline">⏳ Thuật toán đang làm gì?</div>
         <div id="marketDesc" class="status-desc">
-          Bot liên tục quét nến đóng của Binance Futures USDⓈ-M (BTCUSDT). Khi nến 1m, 3m hoặc 5m đóng cửa, hệ thống sẽ đối chiếu với bộ quy tắc 5 bước để xác định có tín hiệu bóp cò hay không.
+          Bot liên tục quét nến đóng của Binance Futures USDⓈ-M (BTCUSDT). Khi nến ${cfg.triggerTimeframes.join(' hoặc ')} đóng cửa, hệ thống sẽ đối chiếu với bộ quy tắc 5 bước để xác định có tín hiệu bóp cò hay không.
         </div>
       </div>
 
@@ -519,6 +534,9 @@ if (port) {
   </div>
 
   <script>
+    // Nút Quét / Test Telegram cần ?key=ADMIN_KEY trên URL dashboard.
+    const KEY = encodeURIComponent(new URLSearchParams(location.search).get('key') || '');
+
     function renderTrendBadge(trend) {
       if (trend === 'up') return '<span class="badge badge-up">🟢 Tăng (Uptrend)</span>';
       if (trend === 'down') return '<span class="badge badge-down">🔴 Giảm (Downtrend)</span>';
@@ -602,8 +620,9 @@ if (port) {
       btn.disabled = true;
       btn.innerHTML = '⏳ Đang quét nến Binance...';
       try {
-        const res = await fetch('/api/scan');
+        const res = await fetch('/api/scan?key=' + KEY);
         const data = await res.json();
+        if (!data.ok) alert('Lỗi quét: ' + data.error);
         await updateDashboard();
       } catch (e) {
         alert('Lỗi quét: ' + e.message);
@@ -627,7 +646,7 @@ if (port) {
       msgEl.innerText = '⏳ Đang gửi mẫu Alert ' + side + ' đến Telegram...';
       prevEl.innerText = '';
       try {
-        const res = await fetch('/test-tele?side=' + side);
+        const res = await fetch('/test-tele?side=' + side + '&key=' + KEY);
         const data = await res.json();
         if (data.ok) {
           resEl.style.background = '#064e3b';
@@ -681,22 +700,21 @@ if (port) {
   }
 }
 
-// Hàm đánh giá chiến lược EMA Ribbon dựa trên dữ liệu nến đóng (trong bộ nhớ WebSocket)
+// Hàm đánh giá chiến lược EMA Ribbon dựa trên dữ liệu nến đóng (trong bộ nhớ WebSocket).
+// Không bao giờ gọi REST ở đây: dữ liệu thiếu/thủng do MarketStream tự vá (có giới hạn tần suất).
 async function evaluateTfs(tfsToEval = cfg.triggerTimeframes) {
-  let h1 = stream.candles['1h'];
-  let m15 = stream.candles['15m'];
-
-  // Nếu chưa có đủ nến trong bộ nhớ, fetch 1 lần qua REST
-  if (!h1 || h1.length < 30 || !m15 || m15.length < 30) {
-    try {
-      [h1, m15] = await Promise.all([fetchKlines('1h'), fetchKlines('15m')]);
-      stream.candles['1h'] = h1;
-      stream.candles['15m'] = m15;
-    } catch (e) {
-      reportError(e);
-      return;
-    }
+  const notReady = ['1h', '15m', ...tfsToEval].filter((tf) => !stream.isReady(tf));
+  if (notReady.length) {
+    const msg = `⏳ Dữ liệu nến ${notReady.join(', ')} chưa liền mạch — đang đồng bộ, tạm không đánh giá`;
+    console.warn(`[${ts(Date.now())}] ${msg}`);
+    stats.market.statusText = msg;
+    stats.lastCheckSummary = msg;
+    for (const tf of notReady) stream.sync(tf);
+    return;
   }
+  const h1 = stream.candles['1h'];
+  const m15 = stream.candles['15m'];
+  stats.lastError = null;
 
   const trend1h = trendOf(h1, cfg);
   const trend15m = trendOf(m15, cfg);
@@ -720,17 +738,7 @@ async function evaluateTfs(tfsToEval = cfg.triggerTimeframes) {
 
   const summaries = [];
   for (const tf of tfsToEval) {
-    let candles = stream.candles[tf];
-    if (!candles || candles.length < 30) {
-      try {
-        candles = await fetchKlines(tf);
-        stream.candles[tf] = candles;
-      } catch (e) {
-        continue;
-      }
-    }
-    if (!candles || !candles.length) continue;
-
+    const candles = stream.candles[tf];
     const lastCandle = candles[candles.length - 1];
     const r = evaluate({ h1, m15, candles, tf, cfg });
     const at = ts(lastCandle.ct + 1);
@@ -790,6 +798,13 @@ async function evaluateTfs(tfsToEval = cfg.triggerTimeframes) {
     }
 
     sent.add(r.signal.key);
+    const cooldownLeft = gate.check();
+    if (cooldownLeft > 0) {
+      const reason = `Đang cooldown sau tín hiệu trước (còn ${Math.ceil(cooldownLeft / 60e3)} phút) — kỷ luật 1 kèo 1 lúc`;
+      summaries.push(`${tf}: SIGNAL bị chặn (cooldown)`);
+      stats.recentLogs.unshift({ time: ts(Date.now()), candleTime: at, tf, price: lastCandle.c, status: 'SIGNAL_COOLDOWN', side: r.signal.side, reason });
+      continue;
+    }
     stats.alertsSentCount++;
     summaries.push(`${tf}: 🚨 SIGNAL`);
     const text = formatAlert(r.signal, cfg);
@@ -805,19 +820,36 @@ async function evaluateTfs(tfsToEval = cfg.triggerTimeframes) {
       reason: `Entry: ${r.signal.entry} | SL: ${r.signal.sl} | TP1: ${r.signal.tp1} | TP2: ${r.signal.tp2}`,
     });
 
-    if (!dry) await sendTelegram(cfg.telegram.token, cfg.telegram.chatId, text);
+    if (!dry) {
+      try {
+        await notify(text);
+      } catch (e) {
+        reportError(new Error(`Gửi Telegram thất bại sau 3 lần: ${e.message}`));
+      }
+    }
   }
 
   stats.market.dataSource = 'Binance Futures WS (0 HTTP Req)';
-  stats.lastError = null;
   if (stats.recentLogs.length > 50) stats.recentLogs.length = 50;
   stats.lastCheckTime = new Date();
   if (summaries.length) stats.lastCheckSummary = summaries.join(' | ');
 }
 
+// Telegram: thử lại tối đa 3 lần (1s, 2s) — tín hiệu chỉ có giá trị trong ~1 phút sau khi nến đóng.
+async function notify(text) {
+  for (let i = 0; ; i++) {
+    try {
+      return await sendTelegram(cfg.telegram.token, cfg.telegram.chatId, text);
+    } catch (e) {
+      if (i >= 2) throw e;
+      await new Promise((r) => setTimeout(r, 1000 * 2 ** i));
+    }
+  }
+}
+
 // Báo lỗi lên dashboard
 function reportError(e) {
-  const msg = `❌ Lỗi lấy dữ liệu: ${e.message}`;
+  const msg = `❌ Lỗi: ${e.message}`;
   console.error(`[${ts(Date.now())}] ${msg}`);
   stats.lastError = { time: ts(Date.now()), message: e.message };
   stats.lastCheckSummary = msg;
@@ -836,22 +868,34 @@ stream.on('status', (st) => {
   stats.market.wsStatus = st;
 });
 
-// 3. Khi cây nến chính thức đóng cửa trên Binance (k.x === true)
+// 3. Khi cây nến chính thức đóng cửa trên Binance (k.x === true).
+// Ở các mốc :00/:15/:30/:45 nến 3m, 5m, 15m (1h) đóng cùng lúc nhưng message tới lệch nhau,
+// nên gom lại và chỉ đánh giá sau closeDelayMs — để khung bóp cò luôn dùng nến 15m/1h mới nhất.
+const closedTfs = new Set();
+let evalTimer = null;
 stream.on('candleClose', (tf) => {
-  console.log(`🔔 [WebSocket] Nến ${tf} vừa đóng cửa lúc ${ts(Date.now())} → Quét tín hiệu tức thì (0ms latency)!`);
-  evaluateTfs(cfg.triggerTimeframes.includes(tf) ? [tf] : cfg.triggerTimeframes);
+  console.log(`🔔 [WebSocket] Nến ${tf} vừa đóng cửa lúc ${ts(Date.now())}`);
+  if (cfg.triggerTimeframes.includes(tf)) closedTfs.add(tf);
+  clearTimeout(evalTimer);
+  evalTimer = setTimeout(() => {
+    const tfs = [...closedTfs];
+    closedTfs.clear();
+    if (tfs.length) evaluateTfs(tfs).catch(reportError);
+  }, cfg.closeDelayMs);
 });
+
+// Lưới an toàn cuối: một Promise lỗi không được làm sập bot (Node 22 mặc định thoát tiến trình).
+process.on('unhandledRejection', (e) => reportError(e instanceof Error ? e : new Error(String(e))));
 
 // === KHỞI CHẠY BOT ===
 console.log(`Bot EMA Ribbon BTCUSDT chạy${dry ? ' (DRY - không gửi Telegram)' : ''}. Khung: ${cfg.triggerTimeframes.join(', ')}`);
 console.log('⚡️ Khởi động kiến trúc WebSocket Stream 0-Request...');
 
-stream.initHistory()
+stream
+  .initHistory()
   .then(() => {
-    evaluateTfs(cfg.triggerTimeframes);
-    stream.connect();
+    if (stream.currentPrice) checkSize(cfg, stream.currentPrice);
+    return evaluateTfs(cfg.triggerTimeframes);
   })
-  .catch((err) => {
-    reportError(err);
-    stream.connect();
-  });
+  .catch(reportError)
+  .finally(() => stream.connect());

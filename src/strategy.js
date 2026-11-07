@@ -18,14 +18,17 @@ function order(r, i) {
   return 'mixed';
 }
 
-// "Máy xay thịt": EMA8 and EMA21 cross each other repeatedly (đan xoắn) inside the lookback.
+// "Máy xay thịt": EMA8 and EMA21 cross each other repeatedly (đan xoắn) inside the lookback,
+// or (chopPriceFlips > 0) the close keeps flipping sides of EMA21 (giá đâm xuyên dải hai chiều).
 // A normal pullback only makes EMA8 dip toward EMA13 — that is not a cross and must not count.
-function isChop(r, n, cfg) {
+function isChop(cs, r, n, cfg) {
   let crosses = 0;
+  let flips = 0;
   for (let i = n - cfg.chopLookback + 1; i <= n; i++) {
     if (Math.sign(r.e8[i] - r.e21[i]) !== Math.sign(r.e8[i - 1] - r.e21[i - 1])) crosses++;
+    if (Math.sign(cs[i].c - r.e21[i]) !== Math.sign(cs[i - 1].c - r.e21[i - 1])) flips++;
   }
-  return crosses >= cfg.chopFlips;
+  return crosses >= cfg.chopFlips || (cfg.chopPriceFlips > 0 && flips >= cfg.chopPriceFlips);
 }
 
 const enoughData = (cs, cfg) => cs.length > 21 + cfg.chopLookback + 1;
@@ -36,11 +39,15 @@ export function trendOf(cs, cfg) {
   const r = ribbon(cs);
   const n = cs.length - 1;
   const b = cfg.slopeBars;
-  if (isChop(r, n, cfg)) return 'chop';
-  if (Math.abs(r.e8[n] - r.e21[n]) / Math.abs(cs[n].c) < cfg.spreadMinPct) return 'chop';
+  if (isChop(cs, r, n, cfg)) return 'chop';
+  // "Xòe rộng" / "dốc": measured in ATR of this timeframe when set, so 1H and 15m are judged alike.
+  const a = atr(cs, 14)[n];
+  const gap = Math.abs(r.e8[n] - r.e21[n]);
+  if (cfg.spreadMinAtr ? gap < cfg.spreadMinAtr * a : gap / Math.abs(cs[n].c) < cfg.spreadMinPct) return 'chop';
+  const minSlope = (cfg.slopeMinAtr || 0) * a;
   const lines = ['e8', 'e13', 'e21'];
-  if (order(r, n) === 'up' && lines.every((e) => r[e][n] > r[e][n - b]) && cs[n].c > r.e21[n]) return 'up';
-  if (order(r, n) === 'down' && lines.every((e) => r[e][n] < r[e][n - b]) && cs[n].c < r.e21[n]) return 'down';
+  if (order(r, n) === 'up' && lines.every((e) => r[e][n] - r[e][n - b] > minSlope) && cs[n].c > r.e21[n]) return 'up';
+  if (order(r, n) === 'down' && lines.every((e) => r[e][n - b] - r[e][n] > minSlope) && cs[n].c < r.e21[n]) return 'down';
   return 'none';
 }
 
@@ -52,7 +59,7 @@ function longSetup(cs, cfg) {
   const a = atr(cs, 14);
   const vol = cs.map((k) => k.v);
 
-  if (isChop(r, n, cfg)) return no('Khung bóp cò sideway (EMA đan xoắn)');
+  if (isChop(cs, r, n, cfg)) return no('Khung bóp cò sideway (EMA đan xoắn)');
 
   // Bước 2: count pullback candles since the latest swing extreme.
   let s = n - 1;
@@ -62,9 +69,11 @@ function longSetup(cs, cfg) {
   if (pb > cfg.pullbackMax) return no(`Pullback ${pb} nến > ${cfg.pullbackMax}`);
   if (!(cs[s].c > r.e8[s])) return no('Trước nhịp hồi giá không nằm ngoài dải EMA');
 
-  // Bước 3: liquidity shock — a body piercing the whole ribbon on huge volume.
-  for (let i = s + 1; i <= n; i++) {
+  // Bước 3: liquidity shock — a pullback candle (against the trend) whose body pierces the whole
+  // ribbon on huge volume. The confirmation candle is not part of the pullback.
+  for (let i = s + 1; i < n; i++) {
     const k = cs[i];
+    if (!(k.c < k.o)) continue;
     const lo = Math.min(r.e8[i], r.e13[i], r.e21[i]);
     const hi = Math.max(r.e8[i], r.e13[i], r.e21[i]);
     if (Math.min(k.o, k.c) < lo && Math.max(k.o, k.c) > hi && k.v > cfg.shockVolMult * avgPrev(vol, 20, i)) {
@@ -81,6 +90,12 @@ function longSetup(cs, cfg) {
   for (let i = s + 1; i <= n - 1; i++) {
     if (Math.abs(cs[i].c - cs[i].o) >= cfg.smallBodyAtr * a[i]) return no('Nhịp hồi có nến lớn (không từ tốn)');
   }
+  // ...and must actually drift down to the ribbon, not stall at the top and stab into it with one candle.
+  if (cfg.pullbackReachEma8) {
+    let reached = false;
+    for (let i = s + 1; i < n; i++) if (cs[i].l <= r.e8[i]) reached = true;
+    if (!reached) return no('Nhịp hồi chưa tiến về dải EMA (nến xác nhận cắm thẳng vào Killzone)');
+  }
 
   // Bước 4: Killzone between EMA8 and EMA21 (must reach EMA13, must not close beyond EMA21).
   const k = cs[n];
@@ -94,15 +109,27 @@ function longSetup(cs, cfg) {
   const longWick = (Math.min(k.o, k.c) - k.l) / range >= cfg.wickMinRatio;
   if (!(range > 0 && (solidBody || longWick))) return no('Nến xác nhận chưa từ chối giá');
 
-  // Risk: SL from the wick, distance must be within [slMin, slMax].
+  // Risk: SL from the wick, distance must be within [slMin, slMax]. Too long -> cancel (spec).
+  // Too short -> widen to slMin (still beyond the wick) when slWidenToMin, else cancel.
   const entry = k.c;
-  const sl = k.l - cfg.slBuffer;
-  const dist = entry - sl;
-  if (dist < cfg.slMin || dist > cfg.slMax) {
+  let sl = k.l - cfg.slBuffer;
+  let dist = entry - sl;
+  if (dist > cfg.slMax || (dist < cfg.slMin && !cfg.slWidenToMin)) {
     return no(`SL ${dist.toFixed(1)} giá ngoài [${cfg.slMin}, ${cfg.slMax}]`);
+  }
+  if (dist < cfg.slMin) {
+    sl = entry - cfg.slMin;
+    dist = cfg.slMin;
   }
   const tp1 = cs[s].h;
   if (!(tp1 > entry)) return no('TP1 (đỉnh cục bộ) không nằm trên Entry');
+  // Fees in price points: Market entry (taker) + exit at SL (taker) or TP1 (limit, maker).
+  if (cfg.minNetRR != null) {
+    const px = Math.abs(entry);
+    const netRisk = dist + px * 2 * cfg.takerFee;
+    const netReward = tp1 - entry - px * (cfg.takerFee + cfg.makerFee);
+    if (netReward < cfg.minNetRR * netRisk) return no(`R:R sau phí ${(netReward / netRisk).toFixed(2)} < ${cfg.minNetRR}`);
+  }
   const tp2 = (Math.floor(tp1 / cfg.roundStep) + 1) * cfg.roundStep;
 
   return { entry, sl, tp1, tp2, pb, touchedEma, green, s };

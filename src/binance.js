@@ -1,14 +1,14 @@
 // Binance public klines (no API key). BTCUSDT only.
-// Sources are tried in order. A geo-block (451/403) or an IP ban/rate-limit (418/429) on one
-// source moves to the next one; bans are tracked per source and expire via Retry-After.
-//   1. USDⓈ-M Futures   fapi.binance.com         — preferred (same price as the traded contract)
-//   2. Spot market-data data-api.binance.vision  — fallback (spot price ≠ futures by the basis)
-// Pin one source with env BINANCE_SOURCE=futures|spot.
+// Default source is USDⓈ-M Futures only: the live WebSocket streams futures candles, and spot
+// trades ~30–50 giá away from futures (basis) — more than the whole 10–20 giá SL — so spot candles
+// must never be mixed in. A geo-block (451/403) or an IP ban/rate-limit (418/429) blocks the source
+// until Retry-After expires instead of retrying it.
+// Opt into a fallback list with env BINANCE_SOURCE=futures,spot (or spot alone).
 const SOURCES = {
   futures: { name: 'futures', url: 'https://fapi.binance.com/fapi/v1/klines' },
   spot: { name: 'spot', url: 'https://data-api.binance.vision/api/v3/klines' },
 };
-const order = process.env.BINANCE_SOURCE ? [SOURCES[process.env.BINANCE_SOURCE]] : [SOURCES.futures, SOURCES.spot];
+const order = (process.env.BINANCE_SOURCE || 'futures').split(',').map((s) => SOURCES[s.trim()]).filter(Boolean);
 const blockedUntil = {}; // source name -> epoch ms
 const TIMEOUT_MS = Number(process.env.BINANCE_TIMEOUT_MS) || 10000;
 const GEO_RETRY_MS = 6 * 3600 * 1000; // re-try a geo-blocked source every 6h

@@ -3,20 +3,29 @@
 
   "capital": 4.52,
   "leverage": 22,
-  "minNotional": 100,
+  "minNotional": 50,
+  "minQty": 0.001,
+  "takerFee": 0.0005,
+  "makerFee": 0.0002,
 
   "triggerTimeframes": ["3m", "5m"],
   "closeDelayMs": 2000,
   "maxSignalAgeMs": 60000,
+  "cooldownMin": 30,
+  "wsStaleMs": 30000,
 
   "slopeBars": 3,
   "spreadMinPct": 0.0005,
+  "spreadMinAtr": 0,
+  "slopeMinAtr": 0,
   "chopLookback": 20,
   "chopFlips": 2,
+  "chopPriceFlips": 0,
 
   "swingLookback": 20,
   "pullbackMin": 5,
   "pullbackMax": 8,
+  "pullbackReachEma8": true,
   "smallBodyAtr": 1.0,
   "shockVolMult": 2.0,
 
@@ -26,5 +35,7 @@
   "slBuffer": 2,
   "slMin": 10,
   "slMax": 20,
+  "slWidenToMin": false,
+  "minNetRR": 1,
   "roundStep": 500
 }

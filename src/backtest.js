@@ -2,6 +2,7 @@
 import { loadConfig, checkNotional } from './config.js';
 import { fetchRange } from './binance.js';
 import { evaluate } from './strategy.js';
+import { SignalGate } from './signal-gate.js';
 
 const WIN = 300;
 const MS = { '1h': 3600000, '15m': 900000, '5m': 300000, '3m': 180000 };
@@ -24,6 +25,8 @@ function cursor(arr) {
   };
 }
 
+// Pass 1: every trigger timeframe. Pass 2: the cross-timeframe cooldown, in time order, like live.
+const found = [];
 for (const tf of cfg.triggerTimeframes) {
   const cs = data[tf];
   const at1 = cursor(data['1h']);
@@ -50,10 +53,15 @@ for (const tf of cfg.triggerTimeframes) {
       signals.push(r.signal);
     }
   }
+  found.push(...signals);
   console.log(`\n===== ${tf} | ${days} ngày | ${cs.length - WIN} nến | ${signals.length} tín hiệu =====`);
-  for (const s of signals) {
-    console.log(`${new Date(s.time + 1).toISOString()} ${s.side} entry=${s.entry} sl=${s.sl} tp1=${s.tp1} tp2=${s.tp2} (pb=${s.pbCount}, EMA${s.touchedEma})`);
-  }
   console.log('-- Lý do NO_SIGNAL --');
   for (const [k, v] of Object.entries(reasons).sort((a, b) => b[1] - a[1])) console.log(`${String(v).padStart(6)}  ${k}`);
+}
+
+const gate = new SignalGate(cfg);
+console.log(`\n===== Tín hiệu sau cooldown ${cfg.cooldownMin} phút (đúng như bot live gửi) =====`);
+for (const s of found.sort((a, b) => a.time - b.time)) {
+  const blocked = gate.check(s.time + 1) > 0 ? '  [bị chặn: cooldown]' : '';
+  console.log(`${new Date(s.time + 1).toISOString()} ${s.tf} ${s.side} entry=${s.entry} sl=${s.sl} tp1=${s.tp1} tp2=${s.tp2} (pb=${s.pbCount}, EMA${s.touchedEma})${blocked}`);
 }
