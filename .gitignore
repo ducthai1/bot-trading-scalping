@@ -5,3 +5,4 @@ config.local.json
 swing/data/
 swing/config.local.json
 swing/.env
+research/_sbx/data/
